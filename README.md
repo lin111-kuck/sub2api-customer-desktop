@@ -1,6 +1,6 @@
 # Sub2API Customer Desktop
 
-面向兑换码客户的 Tauri 2 + React 桌面端。激活使用 `POST /api/v1/customer/activate`；用量、用量明细、通知及通知已读接口使用激活返回的 Access Token 进行 Bearer 鉴权。
+面向兑换码客户的 Tauri 2 + React 桌面端。首次激活使用 `POST /api/v1/customer/activate`；续充使用需要客户 Bearer 鉴权的 `POST /api/v1/customer/recharge`，服务端从 Access Token 确定入账账号。用量、用量明细、通知及通知已读接口同样使用激活返回的 Access Token。
 
 ## 开发
 

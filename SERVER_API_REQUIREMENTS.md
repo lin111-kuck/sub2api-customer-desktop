@@ -33,7 +33,7 @@ Content-Type: application/json
 /api/notifications
 ```
 
-客户端已经恢复为使用 `/api/v1/customer/activate` 完成激活。账号切换、删除、本地安全凭据保存均在客户端本地完成，不需要额外的服务端接口。
+客户端使用 `/api/v1/customer/activate` 完成首次激活，使用需要客户 Bearer 鉴权的 `/api/v1/customer/recharge` 将新兑换码充入当前账号。账号切换、删除、本地安全凭据保存均在客户端本地完成。
 
 ## 目标
 

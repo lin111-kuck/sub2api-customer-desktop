@@ -47,6 +47,13 @@ struct AccountRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct RechargeRequest {
+    account_id: String,
+    code: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct OptionalAccountRequest {
     account_id: Option<String>,
 }
@@ -260,6 +267,20 @@ struct SwitchApiKeyGroupResult {
     service: ServiceResult,
     api_key_id: Option<i64>,
     group: Option<CustomerGroup>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+struct RechargeData {
+    expires_at: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RechargeResult {
+    #[serde(flatten)]
+    service: ServiceResult,
+    expires_at: Option<String>,
 }
 
 impl ActivationResult {
@@ -546,6 +567,71 @@ async fn activate_customer(request: ActivationRequest) -> ActivationResult {
         reason: None,
         retry_after: None,
         expires_at,
+    }
+}
+
+#[tauri::command]
+async fn recharge_customer(request: RechargeRequest) -> RechargeResult {
+    let code = request.code.trim();
+    if code.is_empty() || code.len() > 64 || !valid_account_id(&request.account_id) {
+        return RechargeResult {
+            service: ServiceResult::failure(400, Some(400), "INVALID_REQUEST"),
+            expires_at: None,
+        };
+    }
+    let session = match customer_session(&request.account_id) {
+        Ok(session) => session,
+        Err(reason) => {
+            return RechargeResult {
+                service: ServiceResult::failure(0, None, reason),
+                expires_at: None,
+            }
+        }
+    };
+    let url = match endpoint_url(&session.base_url, "api/v1/customer/recharge") {
+        Ok(url) => url,
+        Err(()) => {
+            return RechargeResult {
+                service: ServiceResult::failure(0, None, "CONFIG_ERROR"),
+                expires_at: None,
+            }
+        }
+    };
+    let client = match http_client() {
+        Ok(client) => client,
+        Err(()) => {
+            return RechargeResult {
+                service: ServiceResult::failure(0, None, "NETWORK_ERROR"),
+                expires_at: None,
+            }
+        }
+    };
+    let (status, body) = match send(
+        client
+            .post(url)
+            .bearer_auth(&session.access_token)
+            .json(&serde_json::json!({ "code": code })),
+    )
+    .await
+    {
+        Ok(response) => response,
+        Err(()) => {
+            return RechargeResult {
+                service: ServiceResult::failure(0, None, "NETWORK_ERROR"),
+                expires_at: None,
+            }
+        }
+    };
+    let (response_code, reason, data, business_ok) = parse_response::<RechargeData>(&body);
+    if !(200..300).contains(&status) || !business_ok {
+        return RechargeResult {
+            service: ServiceResult::failure(status, response_code, failure_reason(reason)),
+            expires_at: None,
+        };
+    }
+    RechargeResult {
+        service: ServiceResult::success(status, response_code),
+        expires_at: data.and_then(|value| value.expires_at),
     }
 }
 
@@ -1188,6 +1274,12 @@ mod tests {
                 .as_str(),
             "http://8.136.139.105:8080/v1/usage"
         );
+        assert_eq!(
+            endpoint_url("http://8.136.139.105:8080", "api/v1/customer/recharge")
+                .unwrap()
+                .as_str(),
+            "http://8.136.139.105:8080/api/v1/customer/recharge"
+        );
     }
 
     #[test]
@@ -1218,6 +1310,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             activate_customer,
+            recharge_customer,
             get_customer_api_key,
             get_customer_groups,
             switch_customer_api_key_group,

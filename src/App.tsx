@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { isTauri } from '@tauri-apps/api/core'
 import { IconAlertTriangle, IconBell, IconChevronDown, IconGlobe, IconHome, IconKey, IconLoader2, IconPlus, IconRefresh, IconX } from '@tabler/icons-react'
-import { activate, applyCodexConfig, diagnoseCodexConfig, getCustomerApiKey, getCustomerGroups, getNotifications, getUsage, getUsageDetails, markNotificationsRead, restoreOfficialCodexConfig, switchCustomerApiKeyGroup, ApiError } from './api'
+import { activate, applyCodexConfig, diagnoseCodexConfig, getCustomerApiKey, getCustomerGroups, getNotifications, getUsage, getUsageDetails, markNotificationsRead, recharge as rechargeCustomer, restoreOfficialCodexConfig, switchCustomerApiKeyGroup, ApiError } from './api'
 import type { CodexConfigStatus, CustomerApiKey, CustomerGroup } from './api'
 import type { Account, Notification } from './model'
 import { deviceId, loadAccounts, saveAccounts } from './storage'
@@ -56,11 +56,16 @@ function ActivationForm({ account, storageWritable, onSuccess, onOpen }: { accou
     event.preventDefault()
     setBusy(true); setError(''); setDiagnostic('')
     try {
-      const id = await deviceId()
-      const accountId = account?.id ?? crypto.randomUUID()
-      const result = await activate(baseUrl, code, id, accountId, account ? [account.id] : [])
-      const fingerprint = await activationId(code, id)
-      onSuccess(account ? { ...account, activationId: fingerprint, expiresAt: result.expiresAt } : accountFromActivation(accountId, fingerprint, result.expiresAt))
+      if (account) {
+        const result = await rechargeCustomer(account.id, code)
+        onSuccess({ ...account, expiresAt: result.expiresAt ?? account.expiresAt })
+      } else {
+        const id = await deviceId()
+        const accountId = crypto.randomUUID()
+        const result = await activate(baseUrl, code, id, accountId, [])
+        const fingerprint = await activationId(code, id)
+        onSuccess(accountFromActivation(accountId, fingerprint, result.expiresAt))
+      }
       setCode('')
     } catch (reason) {
       if (reason instanceof ApiError) {
@@ -137,9 +142,8 @@ function Workspace({ account, onUpdate, onHome }: { account: Account; onUpdate: 
   const recharge = async (event: React.FormEvent) => {
     event.preventDefault(); setRecharging(true); setWorkspaceError(''); setRechargeMessage('')
     try {
-      const id = await deviceId()
-      const result = await activate(baseUrl, rechargeCode, id, account.id, [account.id])
-      onUpdate(account.id, { activationId: await activationId(rechargeCode, id), expiresAt: result.expiresAt })
+      const result = await rechargeCustomer(account.id, rechargeCode)
+      onUpdate(account.id, { expiresAt: result.expiresAt ?? account.expiresAt })
       setRechargeCode(''); setRechargeMessage('额度已增加，正在同步服务端数据。'); setReloadVersion((value) => value + 1)
     } catch (reason) { setWorkspaceError(reason instanceof Error ? reason.message : '增加额度失败。') } finally { setRecharging(false) }
   }
